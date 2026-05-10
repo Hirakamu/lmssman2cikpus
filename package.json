@@ -1,0 +1,48 @@
+{
+  "name": "sman-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Backend API server for sman project",
+  "type": "module",
+  "main": "dist/dirty.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "node src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "clean": "rimraf dist",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "import-csv": "tsx src/cli/import-csv.ts"
+  },
+  "dependencies": {
+    "axios": "^1.15.0",
+    "cheerio": "^1.2.0",
+    "cors": "^2.8.5",
+    "csv-parser": "^3.2.0",
+    "dotenv": "^17.4.2",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.3",
+    "mime-types": "^3.0.2",
+    "multer": "^2.1.1",
+    "p-limit": "^7.3.0",
+    "sharp": "^0.34.5",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^4.17.23",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/mime-types": "^3.0.1",
+    "@types/multer": "^2.1.0",
+    "@types/node": "^22.15.3",
+    "@types/pg": "^8.20.0",
+    "bcryptjs": "^2.4.3",
+    "pg": "^8.11.0",
+    "rimraf": "^6.0.1",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.3"
+  }
+}

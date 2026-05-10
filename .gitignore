@@ -1,0 +1,8 @@
+src/route/alya/
+.env
+.vscode
+node_modules
+dist
+logs
+sideproject/
+data mentah/
