@@ -88,7 +88,7 @@ router.all("/version", (req, res) => {
   res.json({ version: env.VERSION });
 });
 
-router.all("/health", (req, res) => {
+router.all("/ping", (req, res) => {
   res.json({ status: "ok" });
 });
 

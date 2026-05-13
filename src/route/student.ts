@@ -1,21 +1,10 @@
 import express from "express";
-import { studentDashboardRoute } from "./student/dashboard.js";
+import * as student from './student/index.js';
 
 const router = express.Router();
 
-router.use("/dashboard", studentDashboardRoute);
-router.get("/", (_req, res) => {
-    res.json({ 
-        success: true,
-        list: [
-          "POST /beranda",
-          "POST /kelas",
-          "POST /kalender-akademik",
-          "POST /pencapaian",
-          "POST /profile",
-          "POST /list"
-        ]
-    });
-});
+for (const route of Object.values(student)) {
+  router.use(`/${route.path}`, route.router);
+}
 
 export const studentRoute = router;

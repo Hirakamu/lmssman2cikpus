@@ -90,11 +90,11 @@ export class DatabaseClient {
 			await client.query('BEGIN');
 			const result = await callback(client);
 			await client.query('COMMIT');
-			logger.debug('Transaction committed');
+			logger.debug('Database transaction committed');
 			return result;
 		} catch (error) {
 			await client.query('ROLLBACK');
-			logger.error('Transaction rolled back', { error });
+			logger.error('Database transaction rolled back', { error });
 			throw error;
 		} finally {
 			client.release();

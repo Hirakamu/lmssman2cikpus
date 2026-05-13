@@ -1,4 +1,4 @@
-import { Router } from "express";
+import express from "express";
 import { authMiddleware, type AuthenticatedRequest } from "../../lib/authMiddleware.js";
 import { db } from "../../lib/db.js";
 
@@ -13,18 +13,58 @@ const formatClassLabel = (rawClassId: unknown): string => {
 const getMondayBasedDay = (date: Date): number => {
     return ((date.getDay() + 6) % 7) + 1;
 };
-const router = Router();
+
+const router = express.Router();
 
 router.post("/beranda", authMiddleware(["student"]), async (req, res) => {
   try {
     const user = (req as AuthenticatedRequest).user;
     const result = await db.transaction(async (client) => {
-      const [studentRes,subjectCountRes,attendanceRes,scheduleRes] = await Promise.all([
-        client.query(`SELECT name, studentId, classId FROM student WHERE studentId = $1`, [user.userId]),
-        client.query(`SELECT COUNT(DISTINCT subjectId) FROM schedule WHERE classId = $1`, [user.classId]),
-        client.query(`SELECT status, COUNT(*) as total FROM attendance WHERE studentId = $1 GROUP BY status`, [user.userId]),
-        client.query(`SELECT t.day, t.timeStart, t.timeEnd, t.sort, sc.subjectId, sc.secondarysubject, sn.name AS subjectName FROM schedule sc JOIN timetable t ON sc.schedule = t.numId LEFT JOIN subjectname sn ON sn.subjectId = sc.subjectId AND sn.secondarysubject = sc.secondarysubject WHERE sc.classId = $1 ORDER BY t.day, t.sort`, [user.classId])]);
-      return { student: studentRes.rows[0], subjectCount: parseInt(subjectCountRes.rows[0].count), attendance: attendanceRes.rows, schedule: scheduleRes.rows };
+      const studentRes = await client.query(`SELECT name, nisn, classId FROM student WHERE nisn = $1`, [user.userId]);
+      const student = studentRes.rows[0];
+
+      // Schedule from timetable (may not include class filter)
+      let scheduleRows: any[] = [];
+      try {
+        const scheduleRes = await client.query(`SELECT day, timestart, timeend, sort FROM timetable ORDER BY day, sort`);
+        scheduleRows = scheduleRes.rows;
+      } catch (e) {
+        scheduleRows = [];
+      }
+
+      // Attendance counts grouped by type (fall back to empty)
+      let attendanceRows: any[] = [];
+      try {
+        const attendanceRes = await client.query(`SELECT type, COUNT(*) AS total FROM attendance WHERE nisn = $1 GROUP BY type`, [user.userId]);
+        attendanceRows = attendanceRes.rows;
+      } catch (e) {
+        attendanceRows = [];
+      }
+
+      // Upcoming assignments for student's class (graceful fallback if tables missing)
+      let upcomingAssignments: any[] = [];
+      let submittedIds = new Set<number>();
+      try {
+        if (student && student.classid != null) {
+          const assignRes = await client.query(
+            `SELECT id, title, date, expiry, classid, subjectid FROM assignmentteacher WHERE classid = $1 AND expiry >= NOW() ORDER BY date LIMIT 10`,
+            [student.classid]
+          );
+          upcomingAssignments = assignRes.rows;
+
+          // fetch submissions by this student for those assignments
+          if (upcomingAssignments.length > 0) {
+            const ids = upcomingAssignments.map((r: any) => r.id);
+            const submitRes = await client.query(`SELECT assignmentid FROM assignmentsubmit WHERE nisn = $1 AND assignmentid = ANY($2::int[])`, [user.userId, ids]);
+            for (const s of submitRes.rows) submittedIds.add(Number(s.assignmentid));
+          }
+        }
+      } catch (e) {
+        upcomingAssignments = [];
+        submittedIds = new Set();
+      }
+
+      return { student, schedule: scheduleRows, attendance: attendanceRows, assignments: upcomingAssignments, submittedIds };
     });
 
     if (!result.student){return res.status(404).json({success: false, message: "Student not found"});}
@@ -32,8 +72,8 @@ router.post("/beranda", authMiddleware(["student"]), async (req, res) => {
     const attendanceMap = {attended: 0, permit: 0, sick: 0, absent: 0};
 
     for (const row of result.attendance) {
-      const key = String(row.status).toLowerCase() as keyof typeof attendanceMap;
-      if (attendanceMap[key] !== undefined){attendanceMap[key] = parseInt(String(row.total));}
+      const key = String(row.type ?? row.status).toLowerCase() as keyof typeof attendanceMap;
+      if (attendanceMap[key] !== undefined) { attendanceMap[key] = parseInt(String(row.total)); }
     }
 
     const attendanceTotal =
@@ -49,32 +89,22 @@ router.post("/beranda", authMiddleware(["student"]), async (req, res) => {
 
     for (const row of result.schedule) {
       const day = Number(row.day);
+      if (!Number.isFinite(day)) continue;
+      if (!weeklyMap.has(day)) weeklyMap.set(day, []);
 
-      if (!Number.isFinite(day)) {
-        continue;
-      }
-
-      if (!weeklyMap.has(day)) {
-        weeklyMap.set(day, []);
-      }
-
-      const [sh, sm, ss] = row.timestart.split(":").map(Number);
-      const [eh, em, es] = row.timeend.split(":").map(Number);
+      const ts = String(row.timestart ?? row.timestart ?? row.timeStart ?? row.timeStart ?? "");
+      const te = String(row.timeend ?? row.timeend ?? row.timeEnd ?? row.timeEnd ?? "");
+      const [sh, sm, ss] = ts.split(":").map(Number);
+      const [eh, em, es] = te.split(":").map(Number);
 
       const start = new Date();
       const end = new Date();
-
-      start.setHours(sh, sm, ss || 0, 0);
-      end.setHours(eh, em, es || 0, 0);
-
-      const name = String(row.subjectname ?? `Subject-${row.subjectid}`);
+      start.setHours(sh || 0, sm || 0, ss || 0, 0);
+      end.setHours(eh || 0, em || 0, es || 0, 0);
 
       weeklyMap.get(day)!.push({
-        name,
-        time: {
-          start: start.getTime(),
-          end: end.getTime()
-        }
+        name: `Period ${row.sort ?? "?"}`,
+        time: { start: start.getTime(), end: end.getTime() }
       });
     }
 
@@ -91,7 +121,7 @@ router.post("/beranda", authMiddleware(["student"]), async (req, res) => {
         name: result.student.name,
         studentId: String(result.student.studentid ?? result.student.studentId ?? user.userId),
         class: formatClassLabel(result.student.classid ?? result.student.classId),
-        subjectCount: result.subjectCount,
+        subjectCount: Array.isArray(result.assignments) ? result.assignments.length : 0,
         attendanceTotal,
 
         schedule: {
@@ -103,7 +133,14 @@ router.post("/beranda", authMiddleware(["student"]), async (req, res) => {
         },
 
         attendance: attendanceMap,
-        assignment: { name: "upcoming system"
+        assignment: {
+          upcoming: (result.assignments ?? []).map((a: any) => ({
+            id: a.id,
+            title: a.title,
+            date: a.date ?? null,
+            expiry: a.expiry ?? null,
+            submitted: (result.submittedIds && result.submittedIds.has && result.submittedIds.has(Number(a.id))) || false
+          }))
         },
         exams: {
           upcoming: [
@@ -145,33 +182,27 @@ router.post("/kelas", authMiddleware(["student"]), async (req, res) => {
       selectedDay = parsedDay;
     }
 
-    const scheduleRes = await db.query(
-      `SELECT 
-          t.day,
-          t.timeStart,
-          t.timeEnd,
-          t.sort,
-          sc.subjectId,
-          sc.secondarysubject,
-          sn.name AS subjectName
-       FROM schedule sc
-       JOIN timetable t 
-         ON sc.schedule = t.numId
-       LEFT JOIN subjectname sn
-         ON sn.subjectId = sc.subjectId
-        AND sn.secondarysubject = sc.secondarysubject
-       WHERE sc.classId = $1
-       ORDER BY t.day, t.sort`,
-      [user.classId]
-    );
+    // Query timetable directly (schedule table doesn't exist in new schema)
+    let scheduleRes = { rows: [] };
+    try {
+      scheduleRes = await db.query(
+        `SELECT 
+            day,
+            timeStart,
+            timeEnd,
+            sort
+         FROM timetable
+         WHERE day = $1
+         ORDER BY sort`,
+        [selectedDay]
+      );
+    } catch (e) {
+      // timetable query failed, return empty schedule
+    }
 
     const subjects: Array<{ name: string; time: { start: number; end: number } }> = [];
 
     for (const row of scheduleRes.rows) {
-      if (Number(row.day) !== selectedDay) {
-        continue;
-      }
-
       const [sh, sm, ss] = String(row.timestart ?? row.timeStart).split(":").map(Number);
       const [eh, em, es] = String(row.timeend ?? row.timeEnd).split(":").map(Number);
 
@@ -182,7 +213,7 @@ router.post("/kelas", authMiddleware(["student"]), async (req, res) => {
       end.setHours(eh, em, es || 0, 0);
 
       subjects.push({
-        name: String(row.subjectname ?? row.subjectName ?? `Subject-${row.subjectid}`),
+        name: `Period ${row.sort}`,
         time: {
           start: start.getTime(),
           end: end.getTime()
@@ -208,7 +239,7 @@ router.post("/profile", authMiddleware(["student"]), async (req, res) => {
   try {
     const user = (req as AuthenticatedRequest).user;
     const result = await db.query(
-      `SELECT name, studentId, email, classId FROM student WHERE studentId = $1`,
+      `SELECT name, nisn, email, classId FROM student WHERE nisn = $1`,
       [user.userId]
     );
     if (result.rows.length === 0) {
@@ -222,7 +253,7 @@ router.post("/profile", authMiddleware(["student"]), async (req, res) => {
       success: true,
       data: {
         name: student.name,
-        studentId: String(student.studentid ?? student.studentId ?? user.userId),
+        nisn: String(student.nisn),
         email: student.email,
         class: formatClassLabel(student.classid ?? student.classId)
       }
@@ -232,33 +263,8 @@ router.post("/profile", authMiddleware(["student"]), async (req, res) => {
     return res.status(500).json({ success: false });
   }
 });
-router.post("/list", async (req, res) => {
-    const { query } = req.body ?? {};
-    
-    if (typeof query !== "string" || !query.trim()) {
-        return res.status(400).json({
-            success: false,
-            message: "Missing or invalid body field: query"
-        });
-    }
 
-    try {
-        const result = await db.query(
-            `SELECT name, studentId, email, classId FROM student WHERE name ILIKE $1 OR studentId ILIKE $1 ORDER BY name ASC LIMIT 50`,
-            [`%${query.trim()}%`]
-        );
-        return res.status(200).json({
-            success: true,
-            count: result.rows.length,
-            data: result.rows
-        });
-    } catch (error) {
-        console.error(error);
-        return res.status(500).json({
-            success: false,
-            message: "No students found."
-        });
-    }
-});
-
-export const studentDashboardRoute = router;
+export default {
+  path: 'dashboard',
+  router
+};

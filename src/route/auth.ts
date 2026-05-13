@@ -6,42 +6,31 @@ import { authMiddleware } from '../lib/authMiddleware.js';
 
 const router = express.Router();
 
-router.post('/login', async (req, res) => {
-    const { identifier , password } = req.body ?? {};
-
-    if (typeof identifier !== 'string' || !identifier.trim() || typeof password !== 'string' || !password) {
-        return res.status(400).json({
-            message: 'Missing or invalid body fields: identifier, password'
-        });
-    }
-
-    const loginId = identifier.trim();
-
-    // Try student first
+async function studentLogin(loginId: string, password: string, res: express.Response) {
     let studentResult = await db.query(
-        `SELECT * FROM student WHERE studentId = $1 OR email = $1`,
+        `SELECT * FROM student WHERE nisn = $1 OR email = $1 OR nickname = $1`,
         [loginId]
     );
 
     if (studentResult.rows.length > 0) {
         const student = studentResult.rows[0];
-        const passwordHash = student.passwordHash;
+        const passwordhash = student.passwordhash;
 
-        if (typeof passwordHash !== 'string' || !passwordHash) {
+        if (typeof passwordhash !== 'string' || !passwordhash) {
             return res.status(500).send('Data password siswa tidak valid');
         }
 
-        const hashMatch = await bcrypt.compare(password, passwordHash);
+        const hashMatch = await bcrypt.compare(password, passwordhash);
         if (!hashMatch) {
             return res.status(401).send('Password salah');
         }
 
         const token = jwtService.sign({
-            userId: student.studentid ?? student.studentId,
+            userId: student.nisn,
             role: 'student',
             name: student.name,
             email: student.email,
-            classId: student.classid ?? student.classId
+            classId: student.classid
         });
 
         return res.json({
@@ -50,22 +39,23 @@ router.post('/login', async (req, res) => {
             token
         });
     }
+}
 
-    // Try teacher
+async function teacherLogin(loginId: string, password: string, res: express.Response) {
     let teacherResult = await db.query(
-        `SELECT * FROM teacher WHERE nip = $1 OR email = $1`,
+        `SELECT * FROM teacher WHERE nip = $1 OR email = $1 OR nickname = $1`,
         [loginId]
     );
 
     if (teacherResult.rows.length > 0) {
         const teacher = teacherResult.rows[0];
-        const passwordHash = teacher.passwordHash;
+        const passwordhash = teacher.passwordhash;
 
-        if (typeof passwordHash !== 'string' || !passwordHash) {
+        if (typeof passwordhash !== 'string' || !passwordhash) {
             return res.status(500).send('Data password guru tidak valid');
         }
 
-        const hashMatch = await bcrypt.compare(password, passwordHash);
+        const hashMatch = await bcrypt.compare(password, passwordhash);
         if (!hashMatch) {
             return res.status(401).send('Password salah');
         }
@@ -87,6 +77,33 @@ router.post('/login', async (req, res) => {
     return res.status(404).json({
         message: `User dengan ID ${loginId} tidak ditemukan`
     });
+}
+
+router.post('/login', async (req, res) => {
+    const { identifier , password } = req.body ?? {};
+
+    if (typeof identifier !== 'string' || !identifier.trim() || typeof password !== 'string' || !password) {
+        return res.status(400).json({
+            message: 'Missing or invalid body fields: identifier, password'
+        });
+    }
+
+    const loginId = identifier.trim();
+
+    // Try student first
+    const studentLoginResult = await studentLogin(loginId, password, res);
+    if (studentLoginResult) {
+        return studentLoginResult;
+    }
+
+    // Try teacher
+    const teacherLoginResult = await teacherLogin(loginId, password, res);
+    if (teacherLoginResult) {
+        return teacherLoginResult;
+    }
+ 
 });
+
+
 
 export const authRoute = router;
