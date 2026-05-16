@@ -1,22 +1,32 @@
 import cors from "cors";
 import express from "express";
-import { lms } from "./lib/lms.js";
-import { authRoute } from "./route/auth.js";
-import { studentRoute } from "./route/student.js";
-import { teacherRoute } from "./route/teacher.js";
-import { generalRoute } from "./route/general.js";
-import { errorHandler } from "./lib/errorHandler.js";
+import { lmsfs } from "./lib/filesystem.js";
+import * as route from "./route/index.js";
+import { ApiError, responseHandler } from "./lib/routeHandler.js";
+//import { firstRun } from "./lib/firstRun.js";
+
+// Mother of the app
 const app = express();
+
+// Initialize the filesystem module
+//firstRun();
+lmsfs.init();
+
+// Enable CORS for all routes
 app.use(cors());
+
+// Middleware to parse JSON bodies
 app.use(express.json());
-app.use(generalRoute);
-app.use("/auth", authRoute);
-app.use("/student", studentRoute);
-app.use("/teacher", teacherRoute);
-app.use("/siswa", studentRoute);
-app.use("/guru", teacherRoute);
-app.use(errorHandler);
-lms.init();
-app.all("*", (req, res) => {res.status(404).json({ message: `Endpoint not found, ${req.originalUrl}.` });});
+
+// Register routes
+for (const rout of Object.values(route)) {
+  app.use(rout.path, rout.router);
+}
+
+// Catch-all for undefined routes
+app.all("*", (req, res, next) => { next(new ApiError(404, `Endpoint not found, ${req.originalUrl}.`)); });
+
+// Global response handler
+app.use(responseHandler);
 
 export { app };

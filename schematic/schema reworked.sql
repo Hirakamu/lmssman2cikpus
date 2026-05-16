@@ -1,4 +1,4 @@
--- Active: 1776947878337@@192.168.18.2@5432
+-- Active: 1778747732094@@localhost@5432@sman2cikpus
 CREATE TABLE IF NOT EXISTS teacher (
     nip TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS teacher (
 );
 
 CREATE TABLE IF NOT EXISTS student (
-    nisn TEXT PRIMARY KEY,
+    nisn TEXT PRIMARY KEY UNIQUE,
     name TEXT NOT NULL,
     passwordhash TEXT NOT NULL,
     email TEXT NOT NULL,
@@ -20,9 +20,9 @@ CREATE TABLE IF NOT EXISTS student (
 CREATE TABLE IF NOT EXISTS timetable (
     numid INTEGER PRIMARY KEY,
     sort INTEGER NOT NULL,
-    day INTEGER NOT NULL,
-    timestart time NOT NULL, 
-    timeend time NOT NULL,
+    day SMALLINT NOT NULL CHECK (day BETWEEN 1 AND 7),
+    timestart TIME NOT NULL, 
+    timeend TIME NOT NULL,
     desctription TEXT NOT NULL
 );
 

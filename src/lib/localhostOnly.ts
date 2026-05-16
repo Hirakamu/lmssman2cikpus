@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 
-import { ApiError } from './apiError.js';
+import { ApiError } from './routeHandler.js';
 
 const LOCALHOST_IPS = new Set([
 	'127.0.0.1',

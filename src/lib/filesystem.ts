@@ -6,76 +6,76 @@ import { env } from './env.js';
 
 // Types
 
-export type LMSCategory = string;
+export type LMSFSCategory = string;
 
-export interface LMSNewResult {
+export interface LMSFSNewResult {
 	status: boolean;
 	uuid: string;
 	accesslink: string;
 }
-export interface LMSGetResult {
+export interface LMSFSGetResult {
 	status: boolean;
 	buffer: Buffer | null;
 }
-export interface LMSDeleteResult {
+export interface LMSFSDeleteResult {
 	status: boolean;
 }
-export interface LMSExistsResult {
+export interface LMSFSExistsResult {
 	status: boolean;
 }
-export interface LMSInitResult {
+export interface LMSFSInitResult {
 	status: boolean;
-	initialized: LMSCategory[];
-	failed: LMSCategory[];
+	initialized: LMSFSCategory[];
+	failed: LMSFSCategory[];
 }
-export interface LMSTmpWriteResult {
+export interface LMSFSTmpWriteResult {
 	status: boolean;
 }
-export interface LMSTmpAssembleResult {
+export interface LMSFSTmpAssembleResult {
 	status: boolean;
 	accesslink: string; // lms://temp/uuid.xxxx — ready to pass to lms.new()
 }
-export interface LMSTmpCleanResult {
+export interface LMSFSTmpCleanResult {
 	status: boolean;
 }
 
 // Source for lms.new() — direct buffer, or a lms://temp/... accesslink from tmpAssemble()
-export type LMSNewSource =
+export type LMSFSNewSource =
 	| { type: 'buffer'; data: Buffer }
 	| { type: 'tmplink'; accesslink: string }; // lms://temp/uuid.xxxx
 
 // Categories
 
-const LMS_CATEGORIES = new Set<LMSCategory>([
+const LMSFS_CATEGORIES = new Set<LMSFSCategory>([
 	'student',
 	'teacher',
 	'other',
 ]);
-const LMS_TMP_CATEGORY = 'temp';
+const LMSFS_TMP_CATEGORY = 'temp';
 
-export function getCategories(): LMSCategory[] {
-	return Array.from(LMS_CATEGORIES);
+export function getCategories(): LMSFSCategory[] {
+	return Array.from(LMSFS_CATEGORIES);
 }
 
 // Paths
 
-const LMS_PROTOCOL = 'lms://';
+const LMSFS_PROTOCOL = 'lmsfs://';
 const TMP_SUBDIR = '.tmp';
 
 function parseAccesslink(accesslink: string): { category: string; filename: string } | null {
-	if (!accesslink.startsWith(LMS_PROTOCOL)) return null;
-	const withoutProtocol = accesslink.slice(LMS_PROTOCOL.length);
+	if (!accesslink.startsWith(LMSFS_PROTOCOL)) return null;
+	const withoutProtocol = accesslink.slice(LMSFS_PROTOCOL.length);
 	const slashIndex = withoutProtocol.indexOf('/');
 	if (slashIndex === -1) return null;
 	const category = withoutProtocol.slice(0, slashIndex);
 	const filename = withoutProtocol.slice(slashIndex + 1);
 	if (!category || !filename) return null;
 	// Allow both permanent categories and temp
-	if (!LMS_CATEGORIES.has(category) && category !== LMS_TMP_CATEGORY) return null;
+	if (!LMSFS_CATEGORIES.has(category) && category !== LMSFS_TMP_CATEGORY) return null;
 	return { category, filename };
 }
 function resolvePath(category: string, filename: string): string {
-	if (category === LMS_TMP_CATEGORY) {
+	if (category === LMSFS_TMP_CATEGORY) {
 		return path.join(env.location, TMP_SUBDIR, '_assembled', filename);
 	}
 	return path.join(env.location, category, filename);
@@ -91,14 +91,14 @@ function resolveChunkPath(tempId: string, index: number): string {
 
 // Core: permanent storage
 
-async function lmsNew(category: LMSCategory, source: Buffer | LMSNewSource): Promise<LMSNewResult> {
-	if (!LMS_CATEGORIES.has(category)) {
-		logger.error('LMS new: unknown category', { category });
+async function lmsNew(category: LMSFSCategory, source: Buffer | LMSFSNewSource): Promise<LMSFSNewResult> {
+	if (!LMSFS_CATEGORIES.has(category)) {
+		logger.error('LMSFS new: unknown category', { category });
 		return { status: false, uuid: '', accesslink: '' };
 	}
 
 	// Normalise: accept a raw Buffer directly (backwards-compatible)
-	const normalisedSource: LMSNewSource =
+	const normalisedSource: LMSFSNewSource =
 		Buffer.isBuffer(source)
 			? { type: 'buffer', data: source }
 			: source;
@@ -108,18 +108,18 @@ async function lmsNew(category: LMSCategory, source: Buffer | LMSNewSource): Pro
 	if (normalisedSource.type === 'buffer') {
 		buffer = normalisedSource.data;
 	} else {
-		// Read directly from lms://temp/... path — no redundant assembly step
+		// Read directly from lmsfs://temp/... path — no redundant assembly step
 		const { accesslink } = normalisedSource;
 		const parsed = parseAccesslink(accesslink);
-		if (!parsed || parsed.category !== LMS_TMP_CATEGORY) {
-			logger.error('LMS new: invalid tmplink accesslink', { accesslink });
+		if (!parsed || parsed.category !== LMSFS_TMP_CATEGORY) {
+			logger.error('LMSFS new: invalid tmplink accesslink', { accesslink });
 			return { status: false, uuid: '', accesslink: '' };
 		}
 		const tmpFilePath = resolvePath(parsed.category, parsed.filename);
 		try {
 			buffer = await fs.readFile(tmpFilePath);
 		} catch (error) {
-			logger.error('LMS new: could not read tmplink file', { accesslink, error });
+			logger.error('LMSFS new: could not read tmplink file', { accesslink, error });
 			return { status: false, uuid: '', accesslink: '' };
 		}
 	}
@@ -134,21 +134,21 @@ async function lmsNew(category: LMSCategory, source: Buffer | LMSNewSource): Pro
 		await fs.writeFile(tmp, buffer);
 		await fs.rename(tmp, dest);
 
-		const accesslink = `${LMS_PROTOCOL}${category}/${filename}`;
-		logger.debug('LMS file stored', { category, filename, size: buffer.length });
+		const accesslink = `${LMSFS_PROTOCOL}${category}/${filename}`;
+		logger.debug('LMSFS file stored', { category, filename, size: buffer.length });
 
 		return { status: true, uuid, accesslink };
 	} catch (error) {
-		logger.error('LMS new: write failed', { category, filename, error });
+		logger.error('LMSFS new: write failed', { category, filename, error });
 		await fs.unlink(tmp).catch(() => {});
 		return { status: false, uuid: '', accesslink: '' };
 	}
 }
 
-async function lmsGet(accesslink: string): Promise<LMSGetResult> {
+async function lmsGet(accesslink: string): Promise<LMSFSGetResult> {
 	const parsed = parseAccesslink(accesslink);
 	if (!parsed) {
-		logger.error('LMS get: invalid accesslink', { accesslink });
+		logger.error('LMSFS get: invalid accesslink', { accesslink });
 		return { status: false, buffer: null };
 	}
 
@@ -157,18 +157,18 @@ async function lmsGet(accesslink: string): Promise<LMSGetResult> {
 
 	try {
 		const buffer = await fs.readFile(filepath);
-		logger.debug('LMS file read', { category, filename, size: buffer.length });
+		logger.debug('LMSFS file read', { category, filename, size: buffer.length });
 		return { status: true, buffer };
 	} catch (error) {
-		logger.error('LMS get: read failed', { category, filename, error });
+		logger.error('LMSFS get: read failed', { category, filename, error });
 		return { status: false, buffer: null };
 	}
 }
 
-async function lmsDelete(accesslink: string): Promise<LMSDeleteResult> {
+async function lmsDelete(accesslink: string): Promise<LMSFSDeleteResult> {
 	const parsed = parseAccesslink(accesslink);
 	if (!parsed) {
-		logger.error('LMS delete: invalid accesslink', { accesslink });
+		logger.error('LMSFS delete: invalid accesslink', { accesslink });
 		return { status: false };
 	}
 
@@ -177,15 +177,15 @@ async function lmsDelete(accesslink: string): Promise<LMSDeleteResult> {
 
 	try {
 		await fs.unlink(filepath);
-		logger.debug('LMS file deleted', { category, filename });
+		logger.debug('LMSFS file deleted', { category, filename });
 		return { status: true };
 	} catch (error) {
-		logger.error('LMS delete: failed', { category, filename, error });
+		logger.error('LMSFS delete: failed', { category, filename, error });
 		return { status: false };
 	}
 }
 
-async function lmsExists(accesslink: string): Promise<LMSExistsResult> {
+async function lmsExists(accesslink: string): Promise<LMSFSExistsResult> {
 	const parsed = parseAccesslink(accesslink);
 	if (!parsed) return { status: false };
 
@@ -202,9 +202,9 @@ async function lmsExists(accesslink: string): Promise<LMSExistsResult> {
 
 // Core: temp chunk storage
 
-async function lmsTmpWrite(tempId: string, index: number, buffer: Buffer): Promise<LMSTmpWriteResult> {
+async function lmsTmpWrite(tempId: string, index: number, buffer: Buffer): Promise<LMSFSTmpWriteResult> {
 	if (!tempId || index < 0) {
-		logger.error('LMS tmpWrite: invalid arguments', { tempId, index });
+		logger.error('LMSFS tmpWrite: invalid arguments', { tempId, index });
 		return { status: false };
 	}
 
@@ -214,15 +214,15 @@ async function lmsTmpWrite(tempId: string, index: number, buffer: Buffer): Promi
 	try {
 		await fs.mkdir(tmpDir, { recursive: true });
 		await fs.writeFile(chunkPath, buffer);
-		logger.debug('LMS chunk written', { tempId, index, size: buffer.length });
+		logger.debug('LMSFS chunk written', { tempId, index, size: buffer.length });
 		return { status: true };
 	} catch (error) {
-		logger.error('LMS tmpWrite: write failed', { tempId, index, error });
+		logger.error('LMSFS tmpWrite: write failed', { tempId, index, error });
 		return { status: false };
 	}
 }
 
-async function lmsTmpAssemble(tempId: string, totalChunks: number): Promise<LMSTmpAssembleResult> {
+async function lmsTmpAssemble(tempId: string, totalChunks: number): Promise<LMSFSTmpAssembleResult> {
 	const tmpDir = resolveTmpDir(tempId);
 
 	try {
@@ -239,11 +239,11 @@ async function lmsTmpAssemble(tempId: string, totalChunks: number): Promise<LMST
 			}
 		}
 		if (missingChunks.length > 0) {
-			logger.error('LMS tmpAssemble: missing chunks', { tempId, missingChunks });
+			logger.error('LMSFS tmpAssemble: missing chunks', { tempId, missingChunks });
 			return { status: false, accesslink: '' };
 		}
 
-		// Write assembled file as a proper lms://temp entry
+		// Write assembled file as a proper lmsfs://temp entry
 		const uuid = randomUUID();
 		const ext = randomBytes(4).toString('hex');
 		const filename = `${uuid}.${ext}`;
@@ -269,57 +269,57 @@ async function lmsTmpAssemble(tempId: string, totalChunks: number): Promise<LMST
 			})().catch(reject);
 		});
 
-		const accesslink = `${LMS_PROTOCOL}${LMS_TMP_CATEGORY}/${filename}`;
-		logger.debug('LMS tmpAssemble: complete', { tempId, totalChunks, accesslink });
+		const accesslink = `${LMSFS_PROTOCOL}${LMSFS_TMP_CATEGORY}/${filename}`;
+		logger.debug('LMSFS tmpAssemble: complete', { tempId, totalChunks, accesslink });
 		return { status: true, accesslink };
 	} catch (error) {
-		logger.error('LMS tmpAssemble: failed', { tempId, error });
+		logger.error('LMSFS tmpAssemble: failed', { tempId, error });
 		return { status: false, accesslink: '' };
 	}
 }
 
-async function lmsTmpClean(tempId: string): Promise<LMSTmpCleanResult> {
+async function lmsTmpClean(tempId: string): Promise<LMSFSTmpCleanResult> {
 	const tmpDir = resolveTmpDir(tempId);
 	try {
 		await fs.rm(tmpDir, { recursive: true, force: true });
-		logger.debug('LMS tmpClean: removed', { tempId });
+		logger.debug('LMSFS tmpClean: removed', { tempId });
 		return { status: true };
 	} catch (error) {
-		logger.error('LMS tmpClean: failed', { tempId, error });
+		logger.error('LMSFS tmpClean: failed', { tempId, error });
 		return { status: false };
 	}
 }
 
 // Init & health
 
-async function lmsInit(): Promise<LMSInitResult> {
-	const initialized: LMSCategory[] = [];
-	const failed: LMSCategory[] = [];
+async function lmsInit(): Promise<LMSFSInitResult> {
+	const initialized: LMSFSCategory[] = [];
+	const failed: LMSFSCategory[] = [];
 
 	try {
 		await fs.mkdir(env.location, { recursive: true });
 		await fs.mkdir(path.join(env.location, TMP_SUBDIR), { recursive: true });
 		await fs.mkdir(path.join(env.location, TMP_SUBDIR, '_assembled'), { recursive: true });
 	} catch (error) {
-		logger.error('LMS init: failed to create base directory', { base: env.location, error });
-		return { status: false, initialized, failed: Array.from(LMS_CATEGORIES) };
+		logger.error('LMSFS init: failed to create base directory', { base: env.location, error });
+		return { status: false, initialized, failed: Array.from(LMSFS_CATEGORIES) };
 	}
 
 	await Promise.all(
-		Array.from(LMS_CATEGORIES).map(async (category) => {
+		Array.from(LMSFS_CATEGORIES).map(async (category) => {
 			try {
 				await fs.mkdir(path.join(env.location, category), { recursive: true });
 				initialized.push(category);
-				logger.debug('LMS category directory ready', { category });
+				logger.debug('LMSFS category directory ready', { category });
 			} catch (error) {
 				failed.push(category);
-				logger.error('LMS init: failed to create category directory', { category, error });
+				logger.error('LMSFS init: failed to create category directory', { category, error });
 			}
 		})
 	);
 
 	const status = failed.length === 0;
-	logger.debug('LMS initialized', { initialized, failed });
+	logger.debug('LMSFS initialized', { initialized, failed });
 	return { status, initialized, failed };
 }
 
@@ -329,7 +329,7 @@ async function lmsHealthCheck(): Promise<boolean> {
 
 		const checks = await Promise.all([
 			// Check all category dirs
-			...Array.from(LMS_CATEGORIES).map(async (category) => {
+			...Array.from(LMSFS_CATEGORIES).map(async (category) => {
 				try {
 					await fs.access(
 						path.join(env.location, category),
@@ -337,7 +337,7 @@ async function lmsHealthCheck(): Promise<boolean> {
 					);
 					return true;
 				} catch {
-					logger.error('LMS health check: category inaccessible', { category });
+					logger.error('LMSFS health check: category inaccessible', { category });
 					return false;
 				}
 			}),
@@ -346,21 +346,21 @@ async function lmsHealthCheck(): Promise<boolean> {
 				path.join(env.location, TMP_SUBDIR),
 				fs.constants.R_OK | fs.constants.W_OK
 			).then(() => true).catch(() => {
-				logger.error('LMS health check: tmp directory inaccessible');
+				logger.error('LMSFS health check: tmp directory inaccessible');
 				return false;
 			}),
 		]);
 
 		const status = checks.every(Boolean);
-		if (status) logger.debug('LMS health check passed');
+		if (status) logger.debug('LMSFS health check passed');
 		return status;
 	} catch (error) {
-		logger.error('LMS health check: base directory inaccessible', { error });
+		logger.error('LMSFS health check: base directory inaccessible', { error });
 		return false;
 	}
 }
 
-export const lms = {
+export const lmsfs = {
 	init: lmsInit,
 	healthCheck: lmsHealthCheck,
 	new: lmsNew,

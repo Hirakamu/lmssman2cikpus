@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 
-import { ApiError } from './apiError.js';
+import { ApiError } from './routeHandler.js';
 import type { JwtPayload, UserRole } from './jwtService.js';
 import { jwtService } from './jwtService.js';
 

@@ -5,7 +5,7 @@ import { localhostOnly } from '../../lib/localhostOnly.js';
 
 const router = express.Router();
 
-router.post("/add", localhostOnly, async (req, res) => {
+router.post("/add", localhostOnly, async (req, res, next) => {
     try {
         const data = req.body;
         const teacherData = Array.isArray(data) ? data : [data];
@@ -47,19 +47,19 @@ router.post("/add", localhostOnly, async (req, res) => {
             data: results,
             errors: errors.length > 0 ? errors : undefined
         });
-    } catch (error: any) { res.status(500).json({ error: error.message || 'Internal server error' }); }
+    } catch (error: any) { next(error); }
 });
 
-router.post("/search", async (req, res) => {
-    const { query } = req.body ?? {};
+router.post("/search", async (req, res, next) => {
+    const { query }  = req.body ?? {};
     if (typeof query !== "string" || !query.trim()) { return res.status(400).json({ success: false, message: "Missing or invalid body field: query" }); }
     try {
         const result = await db.query(`SELECT name, nip, email, subjectId FROM teacher WHERE name ILIKE $1 OR nip ILIKE $1 ORDER BY name ASC LIMIT 50`, [`%${query.trim()}%`]);
         return res.status(200).json({ success: true, count: result.rows.length, data: result.rows });
-    } catch (error) { return res.status(500).json({ success: false, message: "No teachers found." }); }
+    } catch (error) { next(error); }
 });
 
 export default {
     path: 'user',
     router
-};
+};                                              

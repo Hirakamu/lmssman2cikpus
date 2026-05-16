@@ -26,8 +26,21 @@ const tag = (label: string, tone: string) => `${tone}[${label}]${color.reset}`;
 
 export const logger = {
 	level: env.LOG_LEVEL,
-	debug: (...args: LogArgs) => shouldLog('debug') && console.log(tag('.', color.cyan), ...args),
-	info: (...args: LogArgs) => shouldLog('info') && console.log(tag('>', color.green), ...args),
-	warn: (...args: LogArgs) => shouldLog('warn') && console.log(tag('!', color.yellow), ...args),
-	error: (...args: LogArgs) => shouldLog('error') && console.log(tag('x', color.red), ...args)
+	debug: (...args: LogArgs) => {
+		if (shouldLog('debug')) {
+			console.log(tag('.', color.cyan), ...args);
+		}
+	},
+	info: (...args: LogArgs) => {if (shouldLog('info')) {
+			console.log(tag('>', color.green), ...args);
+		}
+	},
+	warn: (...args: LogArgs) => {if (shouldLog('warn')) {
+			console.log(tag('!', color.yellow), ...args);
+		}
+	},
+	error: (...args: LogArgs) => {if (shouldLog('error')) {
+			console.log(tag('x', color.red), ...args);
+		}
+	}
 };

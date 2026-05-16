@@ -92,4 +92,7 @@ router.all("/ping", (req, res) => {
   res.json({ status: "ok" });
 });
 
-export const generalRoute = router;
+export default {
+    path: '/',
+    router
+};

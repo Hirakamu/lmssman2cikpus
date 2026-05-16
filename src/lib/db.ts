@@ -42,7 +42,7 @@ export class DatabaseClient {
 	 * Execute a single query
 	 */
 	async query<T extends QueryResultRow = QueryResultRow>(
-		text: string,
+		text: string | { text: string; values?: any[] },
 		values?: any[]
 	): Promise<QueryResult<T>> {
 		const startTime = Date.now();
@@ -93,11 +93,12 @@ export class DatabaseClient {
 			logger.debug('Database transaction committed');
 			return result;
 		} catch (error) {
-			await client.query('ROLLBACK');
-			logger.error('Database transaction rolled back', { error });
+			try {
+				await client.query('ROLLBACK');
+			} catch (rollbackError) {
+				logger.error('Rollback failed', { rollbackError });
+			}
 			throw error;
-		} finally {
-			client.release();
 		}
 	}
 

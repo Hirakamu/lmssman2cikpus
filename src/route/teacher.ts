@@ -7,4 +7,7 @@ for (const route of Object.values(teacher)) {
   router.use(`/${route.path}`, route.router);
 }
 
-export const teacherRoute = router;
+export default {
+    path: '/teacher',
+    router
+};

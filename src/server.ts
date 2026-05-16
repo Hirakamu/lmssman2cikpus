@@ -3,7 +3,12 @@ import { app } from './app.js';
 import { db } from './lib/db.js';
 import { env } from './lib/env.js';
 import { logger } from './lib/logger.js';
+import { boot } from "./lib/boot.js";
+
+await boot();
+
 const server = createServer(app);
+
 server.listen(env.PORT, env.HOST, async () => {
     try {
         await db.query('SELECT 1');
